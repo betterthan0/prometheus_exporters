@@ -1,0 +1,14 @@
+[Unit]
+Description=Prometheus Elasticserch Exporter
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+User=exporter_name
+Group=exporter_name
+Type=simple
+ExecStart=/usr/local/bin/exporter_name \
+--es.uri="http://ip:9200"
+
+[Install]
+WantedBy=multi-user.target
