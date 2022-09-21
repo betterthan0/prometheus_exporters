@@ -25,6 +25,10 @@ exporters_setup() {
         exporter="elasticsearch_exporter"
         exporters_config "$exporter" "$exp_num"
         ;;
+    4)
+        exporter="redis_exporter"
+        exporters_config "$exporter" "$exp_num"
+        ;;
     *) echo "Wrong number!!!" ;;
     esac
 }
@@ -64,8 +68,20 @@ exporters_config() {
             echo "Package installation - [FAILED]" && exit 1
         fi
         ;;
+    4)
+        if curl https://api.github.com/repos/oliver006/"$1"/releases/latest |
+            grep -E "browser_download_url" |
+            grep linux-"$architecture" |
+            cut -d '"' -f 4 |
+            wget -qi -; then
+            echo "Package installation - [DONE]"
+        else
+            echo "Package installation - [FAILED]" && exit 1
+        fi
+        ;;
     *) echo "I cant find this exporter... Try again" ;;
     esac
+
     if tar -xvf "$1"*.gz &&
         mv "$1"*64 "$1" &&
         rm "$1"*.gz &&
@@ -80,7 +96,7 @@ exporters_config() {
 
     case $2 in
     1)
-        cp "$DIRPATH"/services/"$1".service /etc/systemd/system/
+        cp "$DIRPATH"/systemd/"$1".service /etc/systemd/system/
         echo "Setup systemd - [DONE]"
         ;;
     2)
@@ -94,29 +110,46 @@ exporters_config() {
         echo "Creating env file ..."
         cat <<  EOT >>"$1".env
 #DATA_SOURCE_NAME="postgresql://username:password@localhost:5432/database-name?sslmode=disable"
-DATA_SOURCE_NAME="postgresql://$1:$pg_pass@localhost:5432/postgres?sslmode=disable"
+DATA_SOURCE_NAME="postgresql://$1:$pg_pass@localhost:5432/postgres?slsslmode=disable"
 EOT
         chown "$1":"$1" /opt/"$1"/"$1".env &&
-            cp "$DIRPATH"/services/"$1".service /etc/systemd/system/
+            cp "$DIRPATH"/systemd/"$1".service /etc/systemd/system/
         echo "Setup systemd - [DONE]"
         ;;
     3)
-        ip=$(ip -4 addr show ens5 | grep -oP "(?<=inet ).*(?=/)")
-        cp "$DIRPATH"/services/"$1".service /etc/systemd/system &&
-            sed -i "s/ip/$ip/" /etc/systemd/system/"$1".service &&
-            sed -i "s/exporter_name/$1/" /etc/systemd/system/"$1".service
+        cp "$DIRPATH"/systemd/"$1".service /etc/systemd/system &&
+            sed -i "s/\/ip/\/$ip/" /etc/systemd/system/"$1".service
         echo "Setup systemd - [DONE]"
         ;;
+    4)
+        echo "Setup redis env..."
+        read -p "Enter redis password: " -r -s redis_pass
+        read -p "Enter redis port: " -r -s redis_port
+        cat < "$DIRPATH"/options/"$1".env > /opt/"$1"/.env &&
+            chown -R "$1":"$1" /opt/"$1" &&
+            sed -i "s/redis_ip/$ip/"  &&
+            sed -i "s/redis_pass/$redis_pass/" &&
+            sed -i "s/redis_port/$redis_port"
+        echo "Redis env - [DONE]"
+        echo "Setup systemd..."
+        cp "$DIRPATH"/systemd/"$1".service /etc/systemd/system
+        echo "Setup systemd - [DONE]"
+        ;;
+
     *) echo "Wrong number!!!" ;;
     esac
     systemctl daemon-reload
     systemctl enable "$1".service
     systemctl start "$1".service
     systemctl status "$1"
-}
+}       
 
 
 [[ $EUID -ne 0 ]] && echo "This script must be run as root." && exit 1
+read -p "For some exporters need ip address, enter network interface:" -r network_int
+ip=$(ip -4 addr show "$network_int" | grep -oP "(?<=inet ).*(?=/)")
+echo "IP that will bee used: $ip"
+
 
 read -p "Do you want to install exporters? [yes/no]:" -r trigger
 while [ "$trigger" != 'no' ]; do

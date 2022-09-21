@@ -1,0 +1,15 @@
+[Unit]
+Description=MongoDB Exporter
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+User=redis_exporter
+Group=redis_exporter
+Type=simple
+Restart=always
+EnvironmentFile=/opt/redis_exporter/.env
+ExecStart=/usr/local/bin/redis_exporter $OPTS
+
+[Install]
+WantedBy=multi-user.target
