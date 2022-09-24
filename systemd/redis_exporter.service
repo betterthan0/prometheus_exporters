@@ -9,7 +9,7 @@ Group=redis_exporter
 Type=simple
 Restart=always
 EnvironmentFile=/opt/redis_exporter/.env
-ExecStart=/usr/local/bin/redis_exporter $OPTS
+ExecStart=/usr/local/bin/redis_exporter $OPTIONS
 
 [Install]
 WantedBy=multi-user.target

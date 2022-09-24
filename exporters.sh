@@ -5,9 +5,10 @@ DIRPATH="$(dirname "$FULLPATH")"
 
 exporters_list() {
     echo "
-        1 - node_exporter
-        2 - postgres_exporter
-        3 - elasticsearch_exporter"
+    1 - node_exporter
+    2 - postgres_exporter
+    3 - elasticsearch_exporter
+    4 - redis_exporter"
 }
 
 exporters_setup() {
@@ -79,7 +80,7 @@ exporters_config() {
             echo "Package installation - [FAILED]" && exit 1
         fi
         ;;
-    *) echo "I cant find this exporter... Try again" ;;
+    *) echo "I cant find this exporter... try again" ;;
     esac
 
     if tar -xvf "$1"*.gz &&
@@ -100,7 +101,7 @@ exporters_config() {
         echo "Setup systemd - [DONE]"
         ;;
     2)
-        read -p "Creating postgres exporter user... Enter password:" -r -s pg_pass
+        read -p "Enter password for psql $1 user:" -r -s pg_pass
         if sudo -u postgres psql -c "create user $1 with password '$pg_pass';" &&
             sudo -u postgres psql -c "GRANT pg_monitor to $1;"; then
             echo "Setup user for postgres - [DONE]"
@@ -108,28 +109,32 @@ exporters_config() {
             echo "Setup user for postgres - [FAILED]" && exit 1
         fi
         echo "Creating env file ..."
-        cat <<  EOT >>"$1".env
-#DATA_SOURCE_NAME="postgresql://username:password@localhost:5432/database-name?sslmode=disable"
-DATA_SOURCE_NAME="postgresql://$1:$pg_pass@localhost:5432/postgres?slsslmode=disable"
-EOT
-        chown "$1":"$1" /opt/"$1"/"$1".env &&
-            cp "$DIRPATH"/systemd/"$1".service /etc/systemd/system/
+        cat < "$DIRPATH"/options/"$1".env > /opt/"$1"/.env &&
+            chown -R "$1":"$1" /opt/"$1" &&
+            sed -i "s/pg_user/$1/g" /opt/"$1"/.env &&
+            sed -i "s/pg_pass/$pg_pass/g" /opt/"$1"/.env
+        echo "Creating env file - [DONE]"
+        echo "Setup systemd..."
+        cp "$DIRPATH"/systemd/"$1".service /etc/systemd/system
         echo "Setup systemd - [DONE]"
         ;;
     3)
+        ip_addr_to_bind
         cp "$DIRPATH"/systemd/"$1".service /etc/systemd/system &&
             sed -i "s/\/ip/\/$ip/" /etc/systemd/system/"$1".service
         echo "Setup systemd - [DONE]"
         ;;
     4)
         echo "Setup redis env..."
+        ip_addr_to_bind
         read -p "Enter redis password: " -r -s redis_pass
+        echo ""
         read -p "Enter redis port: " -r -s redis_port
         cat < "$DIRPATH"/options/"$1".env > /opt/"$1"/.env &&
             chown -R "$1":"$1" /opt/"$1" &&
-            sed -i "s/redis_ip/$ip/"  &&
-            sed -i "s/redis_pass/$redis_pass/" &&
-            sed -i "s/redis_port/$redis_port"
+            sed -i "s/redis_ip/$ip/g" /opt/"$1"/.env &&
+            sed -i "s/redis_pass/$redis_pass/g" /opt/"$1"/.env &&
+            sed -i "s/redis_port/$redis_port/g" /opt/"$1"/.env
         echo "Redis env - [DONE]"
         echo "Setup systemd..."
         cp "$DIRPATH"/systemd/"$1".service /etc/systemd/system
@@ -144,12 +149,15 @@ EOT
     systemctl status "$1"
 }       
 
+ip_addr_to_bind() {
+    ip -4 -j -br a | jq -r '.[] | select(.addr_info[0].local) | .ifname +" "+ .addr_info[0].local' | column -t
+    read -p "Enter the network interface so that the exporter can connect to the service: " -r network_int
+    ip=$(ip -4 addr show "$network_int" | grep -oP "(?<=inet ).*(?=/)")
+    echo "IP that will bee used: $ip"
+}
+
 
 [[ $EUID -ne 0 ]] && echo "This script must be run as root." && exit 1
-read -p "For some exporters need ip address, enter network interface:" -r network_int
-ip=$(ip -4 addr show "$network_int" | grep -oP "(?<=inet ).*(?=/)")
-echo "IP that will bee used: $ip"
-
 
 read -p "Do you want to install exporters? [yes/no]:" -r trigger
 while [ "$trigger" != 'no' ]; do
